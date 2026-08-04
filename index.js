@@ -9,7 +9,7 @@ import todoRouter from "./routers/todoRouter.js";
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 
 app.use(cors());
@@ -20,15 +20,25 @@ app.get("/", (req, res) => {
 });
 
 app.use("/todos", todoRouter);
+app.use("/api/todos", todoRouter);
 
-mongoose
-  .connect(MONGO_URI)
-  .then(() => {
+async function start() {
+  if (!MONGO_URI) {
+    console.error("MONGO_URI 환경변수가 없습니다. Heroku Config Vars에 설정하세요.");
+    process.exit(1);
+  }
+
+  try {
+    await mongoose.connect(MONGO_URI);
     console.log("MongoDB 연결 성공");
+
     app.listen(PORT, () => {
       console.log(`서버가 포트 ${PORT}에서 실행 중입니다`);
     });
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error("MongoDB 연결 실패:", err.message);
-  });
+    process.exit(1);
+  }
+}
+
+start();
