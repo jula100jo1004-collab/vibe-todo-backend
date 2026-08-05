@@ -12,33 +12,54 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 
+let isDbReady = false;
+
 app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("Todo backend is running");
+  res.json({
+    message: "Todo backend is running",
+    db: isDbReady ? "connected" : "disconnected",
+  });
 });
 
-app.use("/todos", todoRouter);
-app.use("/api/todos", todoRouter);
+app.use("/todos", (req, res, next) => {
+  if (!isDbReady) {
+    return res.status(503).json({ message: "MongoDB에 아직 연결되지 않았습니다." });
+  }
+  next();
+}, todoRouter);
 
-async function start() {
+app.use("/api/todos", (req, res, next) => {
+  if (!isDbReady) {
+    return res.status(503).json({ message: "MongoDB에 아직 연결되지 않았습니다." });
+  }
+  next();
+}, todoRouter);
+
+async function connectMongo(retries = 5) {
   if (!MONGO_URI) {
     console.error("MONGO_URI 환경변수가 없습니다. Heroku Config Vars에 설정하세요.");
-    process.exit(1);
+    return;
   }
 
-  try {
-    await mongoose.connect(MONGO_URI);
-    console.log("MongoDB 연결 성공");
-
-    app.listen(PORT, () => {
-      console.log(`서버가 포트 ${PORT}에서 실행 중입니다`);
-    });
-  } catch (err) {
-    console.error("MongoDB 연결 실패:", err.message);
-    process.exit(1);
+  for (let i = 1; i <= retries; i++) {
+    try {
+      await mongoose.connect(MONGO_URI);
+      isDbReady = true;
+      console.log("MongoDB 연결 성공");
+      return;
+    } catch (err) {
+      console.error(`MongoDB 연결 실패 (${i}/${retries}):`, err.message);
+      if (i < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
   }
 }
 
-start();
+app.listen(PORT, () => {
+  console.log(`서버가 포트 ${PORT}에서 실행 중입니다`);
+  connectMongo();
+});
